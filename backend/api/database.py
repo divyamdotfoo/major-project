@@ -1,0 +1,31 @@
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+#sqlalchemy url format
+#'postgresql://<username>:<password>@<ip-address/hostname>/<databasename>
+
+# Get database URL from environment variable or use default (Supabase)
+SQLALCHEMY_DATABASE_URL = os.getenv(
+    "DATABASE_URL"
+)
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
+print("🔗 Connecting to database:", SQLALCHEMY_DATABASE_URL.split('@')[1] if '@' in SQLALCHEMY_DATABASE_URL else SQLALCHEMY_DATABASE_URL)
+
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
