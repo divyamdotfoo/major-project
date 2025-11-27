@@ -1,196 +1,176 @@
-# Seating Allocation System
+# Exam Seating Allocation System
 
-A web-based application for managing examination seating arrangements with support for branch management, student records, and room configurations.
+A comprehensive web application for managing exam seating allocations with branch, student, room, and subject management.
 
-## Architecture
+## Features
 
-**Backend:** FastAPI with SQLAlchemy ORM and PostgreSQL  
-**Frontend:** Next.js 15 with TypeScript and Tailwind CSS  
-**Database:** PostgreSQL with Alembic migrations
+- Branch Management - Create and manage academic branches/departments
+- Student Management - Add students individually or via bulk upload
+- Room Management - Configure examination rooms with seating layouts
+- Subject Management - Manage subjects for examinations
+- Seating Plans - Generate automated seating arrangements
+- Allocation System - Allocate students to rooms with smart seat assignment
 
-## Prerequisites
+## Tech Stack
 
-- Python 3.11 or higher
-- Node.js 18 or higher
-- PostgreSQL 14 or higher
+### Frontend
+- Next.js 16 with React 19
+- TypeScript
+- Tailwind CSS
+- Radix UI components
 
-## Installation
+### Backend
+- Next.js API Routes (serverless functions)
+- Drizzle ORM
+- SQLite database
 
-### Backend Setup
+## Getting Started
 
+### Prerequisites
+- Node.js 18+ installed
+- npm or yarn package manager
+
+### Installation
+
+1. Clone the repository:
 ```bash
-cd backend
-
-# Install dependencies
-uv sync
-
-# Configure database connection (update as needed)
-export DATABASE_URL="postgresql://user:password@localhost/seating_db"
-
-# Run migrations
-alembic upgrade head
-
-# Start server
-uvicorn main:app --reload
+git clone <repository-url>
+cd major-project
 ```
 
-Backend will be available at `http://localhost:8000`  
-API documentation at `http://localhost:8000/docs`
-
-### Frontend Setup
-
+2. Install dependencies:
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
+```
 
-# Start development server
+3. Initialize the database:
+```bash
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+4. Run the development server:
+```bash
 npm run dev
 ```
 
-Frontend will be available at `http://localhost:3000`
+5. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-## Database Schema
+## Project Structure
 
-### Branch
-Academic departments (CSE, ECE, etc.)
-- Primary fields: branch_name, branch_code, description
-- Relationship: One-to-many with students
-
-### Student  
-Individual student records with foreign key to branch
-- Primary fields: roll_no (unique), name, email (unique), phone, branch_id, year, semester
-- Relationship: Many-to-one with branch
-
-### Room
-Examination room configurations
-- Primary fields: room_name (unique), room_number, building, rows, cols, total_capacity
-- Capacity calculated as: rows × cols × 2 (students per bench)
+```
+major-project/
+├── frontend/
+│   ├── app/
+│   │   ├── api/           # API routes
+│   │   │   ├── branches/
+│   │   │   ├── students/
+│   │   │   ├── rooms/
+│   │   │   ├── subjects/
+│   │   │   ├── seating-plans/
+│   │   │   └── allocation/
+│   │   ├── branches/      # Branch management page
+│   │   ├── students/      # Student management page
+│   │   ├── rooms/         # Room management page
+│   │   ├── subjects/      # Subject management page
+│   │   └── allocations/   # Seating allocation page
+│   ├── components/        # Reusable UI components
+│   ├── db/               # Database schema and connection
+│   └── lib/              # Utility functions and config
+└── backend/              # (Legacy - no longer used)
+```
 
 ## API Endpoints
 
 ### Branches
-```
-POST   /branches/              Create branch
-GET    /branches/              List all branches
-GET    /branches/{id}          Get branch details
-GET    /branches/{id}/students Get students by branch
-PUT    /branches/{id}          Update branch
-DELETE /branches/{id}          Delete branch
-```
+- `GET /api/branches` - Get all branches
+- `POST /api/branches` - Create a new branch
+- `GET /api/branches/[id]` - Get a specific branch
+- `PUT /api/branches/[id]` - Update a branch
+- `DELETE /api/branches/[id]` - Delete a branch
+- `POST /api/branches/bulk-upload` - Bulk upload branches from Excel/CSV
 
 ### Students
-```
-POST   /students/              Create student
-POST   /students/bulk-upload   Upload Excel file
-GET    /students/              List students (optional: ?branch_id=)
-GET    /students/{id}          Get student by ID
-GET    /students/roll/{roll}   Get student by roll number
-PUT    /students/{id}          Update student
-DELETE /students/{id}          Delete student
-```
+- `GET /api/students` - Get all students
+- `POST /api/students` - Create a new student
+- `GET /api/students/[id]` - Get a specific student
+- `PUT /api/students/[id]` - Update a student
+- `DELETE /api/students/[id]` - Delete a student
+- `POST /api/students/bulk-upload` - Bulk upload students from Excel/CSV
 
 ### Rooms
-```
-POST   /rooms/                 Create room
-GET    /rooms/                 List rooms
-GET    /rooms/{id}             Get room details
-PUT    /rooms/{id}             Update room
-DELETE /rooms/{id}             Delete room
-```
+- `GET /api/rooms` - Get all rooms
+- `POST /api/rooms` - Create a new room
+- `GET /api/rooms/[id]` - Get a specific room
+- `PUT /api/rooms/[id]` - Update a room
+- `DELETE /api/rooms/[id]` - Delete a room
+- `POST /api/rooms/bulk-upload` - Bulk upload rooms from Excel/CSV
 
-## Bulk Student Upload
+### Subjects
+- `GET /api/subjects` - Get all subjects
+- `POST /api/subjects` - Create a new subject
+- `GET /api/subjects/[id]` - Get a specific subject
+- `PUT /api/subjects/[id]` - Update a subject
+- `DELETE /api/subjects/[id]` - Delete a subject
+- `POST /api/subjects/bulk-upload` - Bulk upload subjects from Excel/CSV
 
-The system supports bulk student upload via Excel files (.xlsx, .xls).
+### Seating Plans
+- `GET /api/seating-plans` - Get all seating plans
+- `GET /api/seating-plans/[id]` - Get a specific seating plan
+- `PUT /api/seating-plans/[id]` - Update a seating plan
+- `DELETE /api/seating-plans/[id]` - Delete a seating plan
+- `POST /api/seating-plans/create-from-existing` - Create plan from existing data
+- `POST /api/seating-plans/create-from-import` - Create plan from imported data
+- `POST /api/seating-plans/upload-students-xlsx` - Parse student Excel file
+- `POST /api/seating-plans/upload-rooms-xlsx` - Parse room Excel file
 
-**Required column:** `roll_no`  
-**Optional columns:** `name`, `email`, `phone`, `year`, `semester`
+### Allocation
+- `POST /api/allocation/allocate-seats` - Allocate seats for two branches in a room
 
-Example format:
+## Bulk Upload Format
 
-| roll_no | name | email | phone | year | semester |
-|---------|------|-------|-------|------|----------|
-| 21CS001 | John Doe | john@example.com | 1234567890 | 3 | 5 |
+### Branches
+Required columns: `id`, `branch_name`
+Optional columns: `description`
 
-Upload via UI at `/students` or via API:
+### Students
+Required columns: `id`, `branch`
+Optional columns: `name`, `email`, `phone`, `semester`
 
-```bash
-curl -X POST http://localhost:8000/students/bulk-upload \
-  -F "file=@students.xlsx" \
-  -F "branch_id=1"
-```
+### Rooms
+Required columns: `id`, `rows`, `cols`
 
-## Application Structure
+### Subjects
+Required columns: `id`, `name`
 
-```
-backend/
-├── api/
-│   ├── routers/         # API route handlers
-│   ├── models.py        # SQLAlchemy models
-│   ├── schema.py        # Pydantic schemas
-│   └── database.py      # Database configuration
-├── alembic/             # Database migrations
-└── main.py              # Application entry point
+## Database Schema
 
-frontend/
-├── app/                 # Next.js pages
-│   ├── branches/        # Branch management
-│   ├── students/        # Student management
-│   ├── rooms/           # Room management
-│   └── allocations/     # Seat allocations
-└── components/          # Reusable UI components
-```
-
-## Usage
-
-1. Start both backend and frontend servers
-2. Navigate to `http://localhost:3000`
-3. Create branches under `/branches`
-4. Add students individually or via bulk upload at `/students`
-5. Configure rooms at `/rooms`
-6. View statistics on the dashboard
-
-## Development
-
-### Running Tests
-```bash
-# Backend
-cd backend && pytest
-
-# Frontend
-cd frontend && npm test
-```
-
-### Database Migrations
-```bash
-# Create new migration
-alembic revision --autogenerate -m "description"
-
-# Apply migrations
-alembic upgrade head
-
-# Rollback
-alembic downgrade -1
-```
+The application uses SQLite with the following tables:
+- `branches` - Academic branches/departments
+- `students` - Student records
+- `rooms` - Examination rooms
+- `subjects` - Subjects for examination
+- `seating_plans` - Saved seating arrangements
 
 ## Deployment
 
-### Backend
-```bash
-gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
-```
+The application can be deployed to any platform that supports Next.js:
 
-### Frontend
-```bash
-npm run build
-npm start
-```
+### Vercel (Recommended)
+1. Push your code to GitHub
+2. Import project in Vercel
+3. Deploy (automatic)
+
+### Other Platforms
+- Netlify
+- Railway
+- AWS Amplify
+- Self-hosted with Docker
 
 ## Notes
 
-- All API responses follow consistent JSON structure
-- Database constraints ensure data integrity (unique roll numbers, emails)
-- CORS is configured for local development (localhost:3000)
-- Room capacity automatically calculated based on layout dimensions
-- Student-branch relationships enforced via foreign keys
+- The SQLite database is stored locally as `sqlite.db`
+- All API routes are serverless functions
+- The application supports bulk uploads via Excel (.xlsx, .xls) or CSV files
+- Seating allocation ensures students with different subjects sit together
