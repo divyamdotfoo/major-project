@@ -1,7 +1,9 @@
 import Header from "@/components/Header";
 import Card from "@/components/Card";
 import Link from "next/link";
-import { API_URL } from "@/lib/config";
+import { db } from "@/db";
+import { branches, students, rooms } from "@/db/schema";
+import { sql } from "drizzle-orm";
 
 interface Stats {
   branches: number;
@@ -11,44 +13,16 @@ interface Stats {
 
 async function getStats(): Promise<Stats> {
   try {
-    const [branchesRes, studentsRes, roomsRes] = await Promise.all([
-      fetch(`${API_URL}/branches`, {
-        cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }),
-      fetch(`${API_URL}/students`, {
-        cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }),
-      fetch(`${API_URL}/rooms`, {
-        cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }),
+    const [branchesCount, studentsCount, roomsCount] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` }).from(branches),
+      db.select({ count: sql<number>`count(*)` }).from(students),
+      db.select({ count: sql<number>`count(*)` }).from(rooms),
     ]);
 
-    if (!branchesRes.ok || !studentsRes.ok || !roomsRes.ok) {
-      console.error("API Error:", {
-        branches: branchesRes.status,
-        students: studentsRes.status,
-        rooms: roomsRes.status,
-      });
-      return { branches: 0, students: 0, rooms: 0 };
-    }
-
-    const branches = await branchesRes.json();
-    const students = await studentsRes.json();
-    const rooms = await roomsRes.json();
-
     return {
-      branches: Array.isArray(branches) ? branches.length : 0,
-      students: Array.isArray(students) ? students.length : 0,
-      rooms: Array.isArray(rooms) ? rooms.length : 0,
+      branches: branchesCount[0]?.count || 0,
+      students: studentsCount[0]?.count || 0,
+      rooms: roomsCount[0]?.count || 0,
     };
   } catch (error) {
     console.error("Error fetching stats:", error);
