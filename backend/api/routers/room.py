@@ -1,26 +1,21 @@
-from fastapi import APIRouter, HTTPException, Depends
-from api.schema import RoomCreate
+from fastapi import APIRouter, HTTPException, Depends, File, UploadFile
+from api.schema import RoomCreate, RoomUpdate, RoomResponse
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
+from typing import List
+import pandas as pd
+import io
 
 from api.database import get_db
 from api.models import Room
 
-router=APIRouter(prefix="")
+router = APIRouter(prefix="/rooms", tags=["rooms"])
 
-@router.get("/")
-def read_root():
-    return {"message": "Hello, World!"}
-
-
-@router.post("/add-room")
-async def add_room(room: RoomCreate, db: Session = Depends(get_db)):
-    """
-    Add a room with seating configuration.
-    Stores the room data in the database.
-    """
+@router.post("/", response_model=RoomResponse)
+async def create_room(room: RoomCreate, db: Session = Depends(get_db)):
+    """Create a new room with seating configuration"""
     try:
         # Validate inputs
         if room.rows <= 0 or room.cols <= 0:
@@ -29,57 +24,21 @@ async def add_room(room: RoomCreate, db: Session = Depends(get_db)):
                 detail="rows and cols must be positive integers"
             )
         
-        # Calculate total capacity
-        total_capacity = room.rows * room.cols * 2
-        
         # Check if room already exists
-        existing_room = db.query(Room).filter(Room.room_name == room.room_name).first()
-        
+        existing_room = db.query(Room).filter(Room.id == room.id).first()
         if existing_room:
-            # Update existing room
-            existing_room.rows = room.rows
-            existing_room.cols = room.cols
-            existing_room.total_capacity = total_capacity
-            existing_room.updated_at = datetime.now()
-            message = f"Room '{room.room_name}' updated successfully"
-            room_obj = existing_room
-        else:
-            # Create new room
-            new_room = Room(
-                room_name=room.room_name,
-                rows=room.rows,
-                cols=room.cols,
-                total_capacity=total_capacity
+            raise HTTPException(
+                status_code=400,
+                detail=f"Room with id '{room.id}' already exists"
             )
-            db.add(new_room)
-            message = f"Room '{room.room_name}' added successfully"
-            room_obj = new_room
         
+        # Create new room
+        db_room = Room(**room.model_dump())
+        db.add(db_room)
         db.commit()
-        db.refresh(room_obj)
+        db.refresh(db_room)
         
-        return JSONResponse(
-            status_code=200,
-            content={
-                "message": message,
-                "room_name": room_obj.room_name,
-                "total_capacity": room_obj.total_capacity,
-                "data": {
-                    "room_name": room_obj.room_name,
-                    "created_at": room_obj.created_at.isoformat() if room_obj.created_at else None,
-                    "configuration": {
-                        "rows": room_obj.rows,
-                        "cols": room_obj.cols,
-                        "total_capacity": room_obj.total_capacity
-                    },
-                    "layout": {
-                        "total_rows": room_obj.rows,
-                        "total_columns": room_obj.cols,
-                        "seats_per_bench": 2
-                    }
-                }
-            }
-        )
+        return db_room
     
     except HTTPException:
         raise
@@ -90,47 +49,152 @@ async def add_room(room: RoomCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"Error adding room: {str(e)}"
+            detail=f"Error creating room: {str(e)}"
         )
 
-@router.get("/rooms")
-def list_rooms(db: Session = Depends(get_db)):
-    """List all stored room data"""
-    rooms = db.query(Room).order_by(Room.created_at.desc()).all()
+@router.post("/bulk-upload")
+async def bulk_upload_rooms(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Bulk upload rooms from CSV or Excel file.
+    Expected columns: id (required), rows (required), cols (required)
+    """
+    # Validate file type
+    if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
+        raise HTTPException(
+            status_code=400,
+            detail="File must be a CSV or Excel file (.csv, .xlsx, .xls)"
+        )
     
-    rooms_data = []
-    for room_obj in rooms:
-        rooms_data.append({
-            "room_name": room_obj.room_name,
-            "created_at": room_obj.created_at.isoformat() if room_obj.created_at else None,
-            "total_capacity": room_obj.total_capacity
-        })
+    try:
+        # Read file based on extension
+        contents = await file.read()
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(contents))
+        else:
+            df = pd.read_excel(io.BytesIO(contents))
+        
+        df.columns = df.columns.str.strip().str.lower()
+        
+        # Check required columns
+        required_columns = ['id', 'rows', 'cols']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing required columns: {', '.join(missing_columns)}. Available columns: {', '.join(df.columns.tolist())}"
+            )
+        
+        # Process rooms
+        created_rooms = []
+        errors = []
+        
+        for idx, row in df.iterrows():
+            try:
+                room_id = str(row['id']).strip() if pd.notna(row['id']) else None
+                if not room_id:
+                    continue
+                
+                rows_val = int(row['rows']) if pd.notna(row['rows']) else None
+                cols_val = int(row['cols']) if pd.notna(row['cols']) else None
+                
+                if not rows_val or not cols_val or rows_val <= 0 or cols_val <= 0:
+                    errors.append(f"Row {idx + 2}: Invalid rows or cols values")
+                    continue
+                
+                # Check if room already exists
+                existing = db.query(Room).filter(Room.id == room_id).first()
+                if existing:
+                    errors.append(f"Row {idx + 2}: Room '{room_id}' already exists")
+                    continue
+                
+                room_data = {
+                    "id": room_id,
+                    "rows": rows_val,
+                    "cols": cols_val
+                }
+                
+                db_room = Room(**room_data)
+                db.add(db_room)
+                created_rooms.append(room_id)
+            except Exception as e:
+                errors.append(f"Row {idx + 2}: {str(e)}")
+        
+        if created_rooms:
+            db.commit()
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": f"Successfully created {len(created_rooms)} rooms",
+                "created_count": len(created_rooms),
+                "error_count": len(errors),
+                "created_rooms": created_rooms,
+                "errors": errors
+            }
+        )
     
-    return {
-        "total_rooms": len(rooms_data),
-        "rooms": rooms_data
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
-@router.get("/rooms/{room_name}")
-def get_room_data(room_name: str, db: Session = Depends(get_db)):
-    """Retrieve data for a specific room by name"""
-    room_obj = db.query(Room).filter(Room.room_name == room_name).first()
+
+@router.get("/", response_model=List[RoomResponse])
+def list_rooms(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """List all rooms"""
+    rooms = db.query(Room).offset(skip).limit(limit).all()
+    return rooms
+
+
+@router.get("/{id}", response_model=RoomResponse)
+def get_room(id: str, db: Session = Depends(get_db)):
+    """Get a specific room by id"""
+    room = db.query(Room).filter(Room.id == id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    return room
+
+
+@router.put("/{id}", response_model=RoomResponse)
+def update_room(id: str, room: RoomUpdate, db: Session = Depends(get_db)):
+    """Update a room"""
+    db_room = db.query(Room).filter(Room.id == id).first()
+    if not db_room:
+        raise HTTPException(status_code=404, detail="Room not found")
     
-    if not room_obj:
-        raise HTTPException(status_code=404, detail=f"Room '{room_name}' not found")
+    try:
+        update_data = room.model_dump(exclude_unset=True)
+        
+        for field, value in update_data.items():
+            setattr(db_room, field, value)
+        
+        db.commit()
+        db.refresh(db_room)
+        return db_room
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Database integrity error")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating room: {str(e)}")
+
+
+@router.delete("/{id}")
+def delete_room(id: str, db: Session = Depends(get_db)):
+    """Delete a room"""
+    room = db.query(Room).filter(Room.id == id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
     
-    return {
-        "room_name": room_obj.room_name,
-        "created_at": room_obj.created_at.isoformat() if room_obj.created_at else None,
-        "configuration": {
-            "rows": room_obj.rows,
-            "cols": room_obj.cols,
-            "total_capacity": room_obj.total_capacity
-        },
-        "layout": {
-            "total_rows": room_obj.rows,
-            "total_columns": room_obj.cols,
-            "seats_per_bench": 2
-        }
-    }
+    try:
+        db.delete(room)
+        db.commit()
+        return {"message": "Room deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting room: {str(e)}")
 

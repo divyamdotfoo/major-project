@@ -6,39 +6,9 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from api.database import get_db
-from api.models import Class, Room
+from api.models import Branch, Student, Room
 
 router = APIRouter(prefix="/allocation")
-
-
-def get_class_data(class_name: str, db: Session) -> dict:
-    """Load class data by name from database"""
-    class_obj = db.query(Class).filter(Class.class_name == class_name).first()
-    
-    if not class_obj:
-        raise HTTPException(status_code=404, detail=f"Class '{class_name}' not found")
-    
-    return {
-        "class_name": class_obj.class_name,
-        "students": class_obj.students
-    }
-
-
-def get_room_data(room_name: str, db: Session) -> dict:
-    """Load room data by name from database"""
-    room_obj = db.query(Room).filter(Room.room_name == room_name).first()
-    
-    if not room_obj:
-        raise HTTPException(status_code=404, detail=f"Room '{room_name}' not found")
-    
-    return {
-        "room_name": room_obj.room_name,
-        "configuration": {
-            "rows": room_obj.rows,
-            "cols": room_obj.cols,
-            "total_capacity": room_obj.total_capacity
-        }
-    }
 
 
 def allocate_seats_round_robin(
@@ -140,30 +110,57 @@ def allocate_seats_round_robin(
 @router.post("/allocate-seats")
 async def allocate_seats(request: AllocationRequest, db: Session = Depends(get_db)):
     """
-    Perform round-robin seating allocation for 2 classes in a room.
+    Perform round-robin seating allocation for 2 branches in a room.
     Ensures no 2 students on the same bench have the same course/subject.
     """
     try:
-        # Load class and room data
-        class1_data = get_class_data(request.class1_name, db)
-        class2_data = get_class_data(request.class2_name, db)
-        room_data = get_room_data(request.room_name, db)
+        # Get branch and room objects
+        branch1 = db.query(Branch).filter(Branch.id == request.branch1_id).first()
+        if not branch1:
+            raise HTTPException(status_code=404, detail=f"Branch with id {request.branch1_id} not found")
         
-        class1_students = class1_data.get('students', [])
-        class2_students = class2_data.get('students', [])
+        branch2 = db.query(Branch).filter(Branch.id == request.branch2_id).first()
+        if not branch2:
+            raise HTTPException(status_code=404, detail=f"Branch with id {request.branch2_id} not found")
         
-        if not class1_students:
-            raise HTTPException(status_code=400, detail=f"Class '{request.class1_name}' has no students")
-        if not class2_students:
-            raise HTTPException(status_code=400, detail=f"Class '{request.class2_name}' has no students")
+        room = db.query(Room).filter(Room.id == request.room_id).first()
+        if not room:
+            raise HTTPException(status_code=404, detail=f"Room with id {request.room_id} not found")
         
-        room_config = room_data.get('configuration', {})
-        rows = room_config.get('rows', 0)
-        cols = room_config.get('cols', 0)
-        total_capacity = room_config.get('total_capacity', 0)
+        # Get student data
+        branch1_students = db.query(Student).filter(Student.branch_id == request.branch1_id).all()
+        branch2_students = db.query(Student).filter(Student.branch_id == request.branch2_id).all()
+        
+        if not branch1_students:
+            raise HTTPException(status_code=400, detail=f"Branch '{branch1.branch_name}' has no students")
+        if not branch2_students:
+            raise HTTPException(status_code=400, detail=f"Branch '{branch2.branch_name}' has no students")
+        
+        # Convert students to dict format for allocation algorithm
+        class1_students = [
+            {
+                "roll_no": student.id,
+                "name": student.name,
+                "course": branch1.id
+            }
+            for student in branch1_students
+        ]
+        
+        class2_students = [
+            {
+                "roll_no": student.id,
+                "name": student.name,
+                "course": branch2.id
+            }
+            for student in branch2_students
+        ]
+        
+        rows = room.rows
+        cols = room.cols
+        total_capacity = rows * cols * 2
         
         if rows == 0 or cols == 0:
-            raise HTTPException(status_code=400, detail=f"Room '{request.room_name}' has invalid configuration")
+            raise HTTPException(status_code=400, detail=f"Room '{room.id}' has invalid configuration")
         
         # Check if room has enough capacity
         total_students = len(class1_students) + len(class2_students)
@@ -181,13 +178,13 @@ async def allocate_seats(request: AllocationRequest, db: Session = Depends(get_d
         
         # Create seating data structure
         seating_data = {
-            'hall': room_data.get('room_name', request.room_name),
+            'hall': room.id,
             'date': date_str,
             'grid': grid,
-            'class1': request.class1_name,
-            'class2': request.class2_name,
-            'total_students_class1': len(class1_students),
-            'total_students_class2': len(class2_students),
+            'branch1': branch1.branch_name,
+            'branch2': branch2.branch_name,
+            'total_students_branch1': len(class1_students),
+            'total_students_branch2': len(class2_students),
             'room_configuration': {
                 'rows': rows,
                 'cols': cols,

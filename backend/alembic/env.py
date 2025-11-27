@@ -26,7 +26,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from api.database import Base
-from api.models import Class, Room
+from api.models import Branch, Student, Room
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
